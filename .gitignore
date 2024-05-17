@@ -1,0 +1,4 @@
+dns_config.yaml
+venv/
+*.egg-info/
+**/__pycache__/
