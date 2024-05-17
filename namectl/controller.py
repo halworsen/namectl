@@ -32,7 +32,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
     domain_configs = []
     num_records = 0
     for domain in config['domains']:
-        # Check for misconfigurations of the domain
+        # Check for misconfiguration of the domain
         if 'name' not in domain:
             LOG.warning(f'Misconfigured domain detected. '
                         'A domain is missing a name and will not be reconciled!')
@@ -59,13 +59,11 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
 
             # If this is a dynamic record, use the machine's detected IP
             dynamic_record = record.get('dynamic', False)
-            dynamic_answer = machine_ipv4
-            if record['type'] == 'AAAA':
-                dynamic_answer = machine_ipv6
-                if machine_ipv6 == '':
-                    LOG.warning('Could not find machine IPv6 for dynamic record. '
-                                f'AAAA {record.get("hostname", "")}.{name} will not be reconciled!')
-                    continue
+            dynamic_answer = machine_ipv6 if record['type'] == 'AAAA' else machine_ipv4
+            if dynamic_record and dynamic_answer == '':
+                LOG.warning('Could not find machine IP for dynamic record. '
+                            f'{record.get("type")} {record.get("hostname", "")}.{name} will not be reconciled!')
+                continue
 
             if not dynamic_record and 'answer' not in record:
                 LOG.warning(f'Misconfigured record detected. '
@@ -165,20 +163,36 @@ def reconcile_domain_records(domain: 'DomainConfig') -> None:
 def controller_loop(args):
     LOG.info('Entering namectl controller loop')
     while True:
-        current_ipv4 = ping4()
-        LOG.info(f'Current IPv4 is: {current_ipv4}')
+        try:
+            current_ipv4 = ping4()
+            LOG.info(f'Current IPv4 is: {current_ipv4}')
+        except:
+            LOG.warning('Failed to get IPv4, dynamic A records will not be reconciled')
+            current_ipv4 = ''
+
         try:
             current_ipv6 = ping6()
             LOG.info(f'Current IPv6 is: {current_ipv6}')
         except:
+            LOG.warning('Failed to get IPv6, dynamic AAAA records will not be reconciled')
             current_ipv6 = ''
 
-        domains = read_dns_config(args.config, current_ipv4, current_ipv6)
+        try:
+            domains = read_dns_config(args.config, current_ipv4, current_ipv6)
+        except Exception as E:
+            LOG.warning('An error occured while reading the DNS configuration. '
+                        f'Reconciliation will resume when the configuration file is valid.\n{E}')
+            time.sleep(args.loop_period)
+            continue
+
         if not len(domains):
             LOG.warning('No domain configuration detected!')
             continue
 
         for domain in domains:
-            reconcile_domain_records(domain)
+            try:
+                reconcile_domain_records(domain)
+            except Exception as E:
+                LOG.warning(f'An error occured while reconciling records for {domain.name}\n{E}')
         
         time.sleep(args.loop_period)
