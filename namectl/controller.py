@@ -37,7 +37,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
 
         if 'provider' not in account:
             LOG.warning(f'Misconfigured account detected. '
-                        f'The account "{name}" has not set the provider and will not be created!')
+                        f'The account {name} has not set the provider and will not be created!')
             continue
 
         # Setup the account provider
@@ -45,18 +45,18 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
         try:
             account_provider.authenticate(account.get('credentials', {}))
         except Exception as E:
-            LOG.warning(f'Failed to configure credentials for account "{name}". '
+            LOG.warning(f'Failed to configure credentials for account {name}. '
                         f'This account will not be created!\n{E}')
             continue
 
         all_accounts[name] = Account(name=name, provider=account_provider)
+        LOG.info(f'Registered account {name} with provider {account["provider"]}')
 
     if 'domains' not in config:
         LOG.warning('The DNS config file is missing domain configuration!')
         return []
 
     domain_configs = []
-    num_records = 0
     for domain in config['domains']:
         # Check for misconfiguration of the domain
         if 'name' not in domain:
@@ -67,17 +67,17 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
 
         if 'account' not in domain:
             LOG.warning(f'Misconfigured domain detected. '
-                        f'The domain "{name}" has not set the account and will not be reconciled!')
+                        f'The domain {name} has not set the account and will not be reconciled!')
             continue
         if domain['account'] not in all_accounts:
             LOG.warning(f'Misconfigured domain detected. '
-                        f'The domain "{name}" is using the non-existent account "{domain["account"]}" '
+                        f'The domain {name} is using the non-existent account {domain["account"]} '
                         'and will not be reconciled!')
             continue
 
         if 'records' not in domain:
             LOG.warning(f'Misconfigured domain detected. '
-                        f'The domain "{name}" has no records and will not be reconciled!')
+                        f'The domain {name} has no records and will not be reconciled!')
             continue
 
         # Now read the desired records for this domain
@@ -86,7 +86,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
             # Check for misconfiguration of the record
             if 'type' not in record:
                 LOG.warning(f'Misconfigured record detected. '
-                            f'A record for "{name}" has not set type and will not be reconciled!')
+                            f'A record for {name} has not set type and will not be reconciled!')
                 continue
 
             # If this is a dynamic record, use the machine's detected IP
@@ -99,7 +99,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
 
             if not dynamic_record and 'answer' not in record:
                 LOG.warning(f'Misconfigured record detected. '
-                            f'A record for "{name}" has not set answer and will not be reconciled!')
+                            f'A record for {name} has not set answer and will not be reconciled!')
                 continue
 
             # Marshal the record configuration
@@ -117,10 +117,8 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
             records=records,
             account=all_accounts[domain['account']],
         ))
-        num_records += len(records)
+        LOG.info(f'Registered domain {name} with {len(records)} records using account {domain["account"]}')
 
-    LOG.info(f'Found {len(domain_configs)} domain(s) in DNS config '
-             f'with a total of {num_records} records')
     return domain_configs
 
 def reconcile_domain_records(domain: 'DomainConfig') -> None:
