@@ -5,6 +5,14 @@ if TYPE_CHECKING:
     from namectl.providers import DNSProvider
 
 @dataclass
+class Account:
+    name: str
+    '''The name for this account'''
+
+    provider: 'DNSProvider' = None
+    '''The DNS registrar provider to use when reconciling records for this domain'''
+
+@dataclass
 class DNSRecord:
     hostname: str
     '''Host name/subdomain for this record'''
@@ -45,5 +53,5 @@ class DomainConfig:
     records: list[DNSRecord]
     '''A list of desired records for this domain'''
 
-    provider: 'DNSProvider' = None
-    '''The DNS registrar provider to use when reconciling records for this domain'''
+    account: Account = None
+    '''The account to use when reconciling records for this domain'''

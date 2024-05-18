@@ -1,28 +1,69 @@
 import requests
 import os
-from namectl.dns import DNSRecord
+from namectl.config import DNSRecord
 from namectl.providers import DNSProvider
 
 class PorkbunProvider(DNSProvider):
     '''
-    This provider requires the following environment variables to be set:
-    - PORKBUN_APIKEY
-    - PORKBUN_SECRETAPIKEY
+    DNS provider for Porkbun.
+
+    Credentials format:
+    ```yaml
+    credentials:
+      key:
+        fromEnv: PORKBUN_APIKEY        # if set, read the API key from this environment variable
+        value: "pk1_xxxxxxxxxxxxxxxxx" # fromEnv takes precedence over this
+      secret:
+        fromEnv: PORKBUN_SECRETAPIKEY  # if set, read the API secret from this environment variable
+        value: "sk1_xxxxxxxxxxxxxxxxx" # fromEnv takes precedence over this
+    ```
     '''
     name = 'porkbun'
 
-    def get_keys() -> tuple[str, str]:
-        if 'PORKBUN_APIKEY' not in os.environ:
-            raise EnvironmentError('PORKBUN_APIKEY is not set!')
-        if 'PORKBUN_SECRETAPIKEY' not in os.environ:
-            raise EnvironmentError('PORKBUN_SECRETAPIKEY is not set!')
-        return (os.environ['PORKBUN_APIKEY'], os.environ['PORKBUN_SECRETAPIKEY'])
+    def authenticate(self, credentials: dict) -> None:
+        if 'key' not in credentials:
+            raise ValueError(f'Account {self.account_name} has not set key in credential config')
+        if 'secret' not in credentials:
+            raise ValueError(f'Account {self.account_name} has not set secret in credential config')
 
-    @staticmethod
-    def list(domain: str) -> list:
+        # Read API key
+        key_cfg = credentials['key']
+        if ('fromEnv' not in key_cfg) and ('value' not in key_cfg):
+            raise ValueError(f'Invalid key config for account {self.account_name}. '
+                             'You must specify the API key through either fromEnv or value.')
+
+        if 'fromEnv' in key_cfg:
+            env_var = key_cfg['fromEnv']
+            if env_var not in os.environ:
+                raise ValueError(f'key.fromEnv = "{env_var}" for account {self.account_name} but '
+                                 f'"{env_var}" is not set in the environment!')
+            self.key = os.environ[env_var]
+        else:
+            self.key = key_cfg['value']
+
+        # Read API secret
+        secret_cfg = credentials['secret']
+        if ('fromEnv' not in secret_cfg) and ('value' not in secret_cfg):
+            raise ValueError(f'Invalid secret config for account {self.account_name}. '
+                             'You must specify the API secret through either fromEnv or value.')
+
+        if 'fromEnv' in secret_cfg:
+            env_var = secret_cfg['fromEnv']
+            if env_var not in os.environ:
+                raise ValueError(f'secret.fromEnv = "{env_var}" for account {self.account_name} but '
+                                 f'"{env_var}" is not set in the environment!')
+            self.secret = os.environ[env_var]
+        else:
+            self.secret = secret_cfg['value']
+
+    def list(self, domain: str) -> list:
         read_all_uri = f'https://porkbun.com/api/json/v3/dns/retrieve/{domain}'
-        key, secret = PorkbunProvider.get_keys()
-        data = {'apikey': key, 'secretapikey': secret, 'start': '1', 'includeLabels': 'yes'}
+        data = {
+            'apikey': self.key,
+            'secretapikey': self.secret,
+            'start': '1',
+            'includeLabels': 'yes',
+        }
         resp = requests.post(read_all_uri, json=data).json()
         if resp['status'] != 'SUCCESS':
             raise RuntimeError(resp['message'])
@@ -48,14 +89,12 @@ class PorkbunProvider(DNSProvider):
 
         return all_records
 
-    @staticmethod
-    def create(domain: str, record: DNSRecord) -> str:
+    def create(self, domain: str, record: DNSRecord) -> str:
         '''Returns the ID of the created record'''
         create_uri = f'https://porkbun.com/api/json/v3/dns/create/{domain}'
-        key, secret = PorkbunProvider.get_keys()
         data = {
-            'apikey': key,
-            'secretapikey': secret,
+            'apikey': self.key,
+            'secretapikey': self.secret,
             'type': record.type,
             'content': record.answer,
             'ttl': str(record.ttl),
@@ -63,7 +102,7 @@ class PorkbunProvider(DNSProvider):
         if record.hostname != '':
             data['name'] = record.hostname
         if record.priority != '':
-            data['prio'] = record.priority
+            data['prio'] = str(record.priority)
 
         resp = requests.post(create_uri, json=data).json()
         if resp['status'] != 'SUCCESS':
@@ -71,32 +110,33 @@ class PorkbunProvider(DNSProvider):
 
         return resp['id']
 
-    @staticmethod
-    def update(domain: str, record: DNSRecord, new_record: DNSRecord) -> None:
+    def update(self, domain: str, record: DNSRecord, new_record: DNSRecord) -> None:
         record_id = record.data['id']
         edit_uri = f'https://porkbun.com/api/json/v3/dns/edit/{domain}/{record_id}'
-        key, secret = PorkbunProvider.get_keys()
         data = {
-            'apikey': key,
-            'secretapikey': secret,
+            'apikey': self.key,
+            'secretapikey': self.secret,
             'name': new_record.hostname,
             'type': record.type,
             'content': new_record.answer,
             'ttl': str(new_record.ttl),
         }
         if record.priority != '':
-            data['prio'] = record.priority
+            data['prio'] = str(record.priority)
 
         resp = requests.post(edit_uri, json=data).json()
         if resp['status'] != 'SUCCESS':
             raise RuntimeError(resp['message'])
 
-    @staticmethod
-    def delete(domain: str, record: DNSRecord) -> None:
+    def delete(self, domain: str, record: DNSRecord) -> None:
         record_id = record.data['id']
         delete_uri = f'https://porkbun.com/api/json/v3/dns/delete/{domain}/{record_id}'
-        key, secret = PorkbunProvider.get_keys()
-        data = {'apikey': key, 'secretapikey': secret, 'start': '1', 'includeLabels': 'yes'}
+        data = {
+            'apikey': self.key,
+            'secretapikey': self.secret,
+            'start': '1',
+            'includeLabels': 'yes',
+        }
         resp = requests.post(delete_uri, json=data).json()
         if resp['status'] != 'SUCCESS':
             raise RuntimeError(resp['message'])

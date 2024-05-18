@@ -1,14 +1,10 @@
 import os
 import time
 import logging
-import typing
 import yaml
-from namectl.dns import DomainConfig, DNSRecord
+from namectl.config import Account, DomainConfig, DNSRecord
 from namectl.providers import ALL_PROVIDERS
 from namectl.ping import ping4, ping6
-
-if typing.TYPE_CHECKING:
-    from namectl.dns import DomainConfig
 
 LOG = logging.getLogger('namectl')
 
@@ -25,8 +21,38 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
     with open(config_path, 'r') as cfg_file:
         config = yaml.load(cfg_file, yaml.Loader)
 
+    if 'accounts' not in config:
+        LOG.warning('The DNS config file is missing account configuration!')
+        return []
+
+    # Deal with reading account config and setting those up first
+    all_accounts = {}
+    for account in config['accounts']:
+        # Check for account misconfiguration
+        if 'name' not in account:
+            LOG.warning(f'Misconfigured account detected. '
+                        'An account is missing a name and will not be created!')
+            continue
+        name = account['name']
+
+        if 'provider' not in account:
+            LOG.warning(f'Misconfigured account detected. '
+                        f'The account "{name}" has not set the provider and will not be created!')
+            continue
+
+        # Setup the account provider
+        account_provider = ALL_PROVIDERS[account['provider']](name)
+        try:
+            account_provider.authenticate(account.get('credentials', {}))
+        except Exception as E:
+            LOG.warning(f'Failed to configure credentials for account "{name}". '
+                        f'This account will not be created!\n{E}')
+            continue
+
+        all_accounts[name] = Account(name=name, provider=account_provider)
+
     if 'domains' not in config:
-        LOG.warning('DNS config is missing the "domains" top level key!')
+        LOG.warning('The DNS config file is missing domain configuration!')
         return []
 
     domain_configs = []
@@ -39,9 +65,14 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
             continue
         name = domain['name']
 
-        if 'provider' not in domain:
+        if 'account' not in domain:
             LOG.warning(f'Misconfigured domain detected. '
-                        f'The domain "{name}" has not set the provider and will not be reconciled!')
+                        f'The domain "{name}" has not set the account and will not be reconciled!')
+            continue
+        if domain['account'] not in all_accounts:
+            LOG.warning(f'Misconfigured domain detected. '
+                        f'The domain "{name}" is using the non-existent account "{domain["account"]}" '
+                        'and will not be reconciled!')
             continue
 
         if 'records' not in domain:
@@ -49,6 +80,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
                         f'The domain "{name}" has no records and will not be reconciled!')
             continue
 
+        # Now read the desired records for this domain
         records = []
         for record in domain['records']:
             # Check for misconfiguration of the record
@@ -83,7 +115,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
         domain_configs.append(DomainConfig(
             name=name,
             records=records,
-            provider=ALL_PROVIDERS[domain.get('provider')]
+            account=all_accounts[domain['account']],
         ))
         num_records += len(records)
 
@@ -94,7 +126,7 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
 def reconcile_domain_records(domain: 'DomainConfig') -> None:
     LOG.info(f'Reconciling DNS records for domain: {domain.name}')
 
-    existing_records = domain.provider.list(domain.name)
+    existing_records = domain.account.provider.list(domain.name)
 
     # For each desired record, check if we can correct an existing record to match it if there is
     # a mismatch. Otherwise, if we find a match, there's nothing to reconcile.
@@ -136,7 +168,7 @@ def reconcile_domain_records(domain: 'DomainConfig') -> None:
             assert(mismatching_record is not None)
             LOG.info(f'Mismatch detected: updating record - '
                      f'{desired_record.type} {desired_record.hostname}.{domain.name} -> {desired_record.answer} (TTL={desired_record.ttl})')
-            domain.provider.update(domain.name, mismatching_record, desired_record)
+            domain.account.provider.update(domain.name, mismatching_record, desired_record)
             mismatching_record.reconciled = True
             desired_record.reconciled = True
 
@@ -147,7 +179,7 @@ def reconcile_domain_records(domain: 'DomainConfig') -> None:
     ))
     for record in orphaned_records:
         LOG.info(f'Deleting orphaned record - {record.type} {record.hostname}.{domain.name} -> {record.answer}')
-        domain.provider.delete(domain.name, record)
+        domain.account.provider.delete(domain.name, record)
         record.reconciled = True
 
     # Then create records for any desired records that haven't been reconciled yet
@@ -157,7 +189,7 @@ def reconcile_domain_records(domain: 'DomainConfig') -> None:
     ))
     for desired_record in records_to_create:
         LOG.info(f'Creating DNS record: {desired_record.type} {desired_record.hostname}.{domain.name} -> {desired_record.answer} (TTL={desired_record.ttl})')
-        domain.provider.create(domain.name, desired_record)
+        domain.account.provider.create(domain.name, desired_record)
         desired_record.reconciled = True
 
 def controller_loop(args):
