@@ -78,12 +78,15 @@ class PorkbunProvider(DNSProvider):
             if record['name'] == domain and record['type'] == 'NS' and 'porkbun' in record['content']:
                 continue
 
+            priority = None
+            if 'prio' in record and record['prio'] is not None:
+                priority = int(record.get('prio'))
             all_records.append(DNSRecord(
                 hostname=hostname,
                 type=record.get('type'),
                 answer=record.get('content'),
                 ttl=int(record.get('ttl')),
-                priority=int(record.get('prio', '0')) if 'prio' in record else None,
+                priority=priority,
                 data={'id': record['id']},
             ))
 
