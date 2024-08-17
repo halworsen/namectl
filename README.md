@@ -37,12 +37,15 @@ desired `records` specified for each of the `domains`.
 | `domains[].name` | string | The name of the domain |
 | `domains[].account` | string | The name of the account to use when reconciling records for this domain |
 | `domains[].records` | list | List of desired DNS records for this domain |
-| `domains[].records[].name` | string | Subdomain/hostname of the record |
+| `domains[].records[].hostname` | string | Subdomain/hostname of the record |
 | `domains[].records[].type` | string | DNS record type |
 | `domains[].records[].content` | string | The desired content of the DNS record |
 | `domains[].records[].ttl` | int | The desired TTL of the DNS record |
 | `domains[].records[].priority` | int | For types that support it, the desired priority of the DNS record |
 | `domains[].records[].dynamic` | bool | If `true`, the DNS record content will dynamically be set to the machine's IPv4 if the record type is A, or the IPv6 if the record type is AAAA |
+| `domains[].ignored_records` | list | List of existing DNS records that should be ignored by namectl |
+| `domains[].ignored_records.hostname` | string | Subdomain/hostname of the record to ignore |
+| `domains[].ignored_records.type` | string | Type of the record to ignore. If set, both hostname and type must match for namectl to ignore the record |
 
 ### Example configuration
 
@@ -61,6 +64,7 @@ accounts:
 domains:
 - name: domain.com
   account: my-pb-acct # domain.com should be updated with the my-pb-acct account
+  # List of records to reconcile
   records:
   # A domain.com -> 1.2.3.4
   # TTL defaults to 600
@@ -85,6 +89,11 @@ domains:
   - hostname: "_note"
     type: TXT
     answer: "hi there"
+  # List of records to ignore (e.g. manually or externally managed records)
+  ignored_records:
+  - hostname: "_acme_challenge"
+    type: TXT
+  - hostname: "manual"
 ```
 
 ## Providers

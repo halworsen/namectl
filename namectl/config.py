@@ -53,5 +53,8 @@ class DomainConfig:
     records: list[DNSRecord]
     '''A list of desired records for this domain'''
 
+    ignored_records: list[DNSRecord]
+    '''A list of records that should be ignored, i.e. left out of the reconciliation loop'''
+
     account: Account = None
     '''The account to use when reconciling records for this domain'''

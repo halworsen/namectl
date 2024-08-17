@@ -111,13 +111,29 @@ def read_dns_config(config_path: str, machine_ipv4: str, machine_ipv6: str) -> l
                 priority=record.get('priority'),
                 dynamic=dynamic_record,
             ))
+        
+        # Then get the list of *ignored* records
+        ignored_records = []
+        for record in domain.get('ignored_records', []):
+            if 'hostname' not in record:
+                LOG.warning(f'Misconfigured ignore record detected. '
+                            f'An ignore record for {name} has not set hostname and will not be ignored!')
+                continue
+
+            ignored_records.append(DNSRecord(
+                hostname=record['hostname'],
+                type=record.get('type', ''),
+                answer='',
+            ))
 
         domain_configs.append(DomainConfig(
             name=name,
             records=records,
+            ignored_records=ignored_records,
             account=all_accounts[domain['account']],
         ))
-        LOG.info(f'Registered domain {name} with {len(records)} records using account {domain["account"]}')
+        ignore_info = f' and {len(ignored_records)} ignored record(s)' if len(ignored_records) else ''
+        LOG.info(f'Registered domain {name} with {len(records)} record(s){ignore_info} using account {domain["account"]}')
 
     return domain_configs
 
@@ -125,6 +141,24 @@ def reconcile_domain_records(domain: 'DomainConfig') -> None:
     LOG.info(f'Reconciling DNS records for domain: {domain.name}')
 
     existing_records = domain.account.provider.list(domain.name)
+
+    # Filter out any ignored records
+    for ignore_record in domain.ignored_records:
+        records_to_check = filter(
+            lambda r: (not r.reconciled) and \
+                      (r.hostname == ignore_record.hostname),
+            existing_records
+        )
+        for record in records_to_check:
+            should_ignore = True
+            # If type is set, check type as well
+            if ignore_record.type != '' and ignore_record.type != record.type:
+                should_ignore = False
+
+            # Mark as reconciled early to ignore
+            if should_ignore:
+                LOG.info(f'Found record {record.type} {record.hostname}.{domain.name} that will be ignored')
+                record.reconciled = True
 
     # For each desired record, check if we can correct an existing record to match it if there is
     # a mismatch. Otherwise, if we find a match, there's nothing to reconcile.
