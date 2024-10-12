@@ -20,6 +20,8 @@ class PorkbunProvider(DNSProvider):
     '''
     name = 'porkbun'
 
+    api_url = 'https://api.porkbun.com/api/json/v3/dns'
+
     def authenticate(self, credentials: dict) -> None:
         if 'key' not in credentials:
             raise ValueError(f'Account {self.account_name} has not set key in credential config')
@@ -57,7 +59,7 @@ class PorkbunProvider(DNSProvider):
             self.secret = secret_cfg['value']
 
     def list(self, domain: str) -> list:
-        read_all_uri = f'https://porkbun.com/api/json/v3/dns/retrieve/{domain}'
+        read_all_uri = f'{self.api_url}/retrieve/{domain}'
         data = {
             'apikey': self.key,
             'secretapikey': self.secret,
@@ -94,7 +96,7 @@ class PorkbunProvider(DNSProvider):
 
     def create(self, domain: str, record: DNSRecord) -> str:
         '''Returns the ID of the created record'''
-        create_uri = f'https://porkbun.com/api/json/v3/dns/create/{domain}'
+        create_uri = f'{self.api_url}/create/{domain}'
         data = {
             'apikey': self.key,
             'secretapikey': self.secret,
@@ -115,7 +117,7 @@ class PorkbunProvider(DNSProvider):
 
     def update(self, domain: str, record: DNSRecord, new_record: DNSRecord) -> None:
         record_id = record.data['id']
-        edit_uri = f'https://porkbun.com/api/json/v3/dns/edit/{domain}/{record_id}'
+        edit_uri = f'{self.api_url}/edit/{domain}/{record_id}'
         data = {
             'apikey': self.key,
             'secretapikey': self.secret,
@@ -133,7 +135,7 @@ class PorkbunProvider(DNSProvider):
 
     def delete(self, domain: str, record: DNSRecord) -> None:
         record_id = record.data['id']
-        delete_uri = f'https://porkbun.com/api/json/v3/dns/delete/{domain}/{record_id}'
+        delete_uri = f'{self.api_url}/delete/{domain}/{record_id}'
         data = {
             'apikey': self.key,
             'secretapikey': self.secret,
